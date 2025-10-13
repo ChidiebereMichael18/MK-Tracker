@@ -1,0 +1,78 @@
+@import "https://unpkg.com/leaflet@1.7.1/dist/leaflet.css";
+@import "tailwindcss";
+
+/* Marker drop animation */
+@keyframes markerDrop {
+  0% {
+    transform: translateY(-100px);
+    opacity: 0;
+  }
+  60% {
+    transform: translateY(25px);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-bounce-once {
+  animation: markerDrop 1s ease-out forwards;
+}
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+:root {
+  --font-sans: var(--font-inter);
+  --font-display: var(--font-plus-jakarta);
+}
+
+@layer base {
+  html {
+    font-family: var(--font-sans);
+  }
+  
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-display);
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Map container styles */
+.leaflet-container {
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+}
+
+/* Ensure proper stacking context for popups */
+.leaflet-popup-content-wrapper {
+  background: white;
+  color: #333;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* Smooth zoom animations */
+.leaflet-fade-anim .leaflet-tile,.leaflet-zoom-anim .leaflet-zoom-animated {
+  will-change: transform;
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
