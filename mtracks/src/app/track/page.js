@@ -3,7 +3,7 @@ import { useEffect, useState, Suspense } from "react";
 import io from "socket.io-client";
 import { useSearchParams } from "next/navigation";
 
-const socket = io("http://127.0.0.1:5000");
+const socket = io("https://mk-tracker.onrender.com");
 
 // Move the main tracking logic to a separate component
 function TrackContent() {

@@ -102,7 +102,7 @@ export default function Dashboard() {
       const newTrackerIds = [...savedTrackers, id];
       localStorage.setItem('watchedTrackers', JSON.stringify(newTrackerIds));
       
-      const socket = io("http://127.0.0.1:5000");
+      const socket = io("https://mk-tracker.onrender.com");
       socket.emit("join_tracker", { 
         tracker_id: id,
         deviceInfo: getDeviceInfo()
@@ -129,7 +129,7 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
-    const socket = io("http://127.0.0.1:5000");
+    const socket = io("https://mk-tracker.onrender.com");
     const deviceInfo = getDeviceInfo();
 
     // Join primary tracker
