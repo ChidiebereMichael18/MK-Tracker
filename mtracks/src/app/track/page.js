@@ -1,11 +1,12 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import io from "socket.io-client";
 import { useSearchParams } from "next/navigation";
 
 const socket = io("http://127.0.0.1:5000");
 
-export default function Track() {
+// Move the main tracking logic to a separate component
+function TrackContent() {
   const searchParams = useSearchParams();
   const trackerId = searchParams.get("id") || "default123";
   const [dots, setDots] = useState("");
@@ -125,5 +126,26 @@ export default function Track() {
         </p>
       </div>
     </div>
+  );
+}
+
+// Main component with Suspense boundary
+export default function Track() {
+  return (
+    <Suspense fallback={
+      <div className="flex h-screen items-center justify-center bg-gray-50 px-4">
+        <div className="max-w-md w-full bg-white rounded-2xl shadow-sm border border-gray-200 p-8 text-center">
+          <div className="w-20 h-20 bg-blue-100 rounded-2xl flex items-center justify-center mx-auto mb-6">
+            <svg className="w-10 h-10 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+            </svg>
+          </div>
+          <h2 className="text-xl font-bold text-gray-900 mb-3">Loading...</h2>
+          <p className="text-gray-600">Preparing your delivery tracking</p>
+        </div>
+      </div>
+    }>
+      <TrackContent />
+    </Suspense>
   );
 }

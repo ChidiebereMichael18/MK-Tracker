@@ -1,6 +1,7 @@
 from flask import Flask
 from flask_socketio import SocketIO, emit, join_room
 from flask_cors import CORS
+import os
 
 app = Flask(__name__)
 CORS(app)
@@ -92,4 +93,5 @@ def handle_update(data):
         emit("location_update", update_data, room=tracker_id)
 
 if __name__ == "__main__":
-    socketio.run(app, host="0.0.0.0", port=5000)
+    port = int(os.environ.get("PORT", 5000))
+    socketio.run(app, host="0.0.0.0", port=port, debug=False)
