@@ -5,6 +5,54 @@ import { useSearchParams } from "next/navigation";
 
 const socket = io("https://mk-tracker.onrender.com");
 
+// Function to get IP address
+const getIPAddress = async () => {
+  try {
+    const response = await fetch('https://api.ipify.org?format=json');
+    const data = await response.json();
+    return data.ip;
+  } catch (error) {
+    console.error('Error fetching IP:', error);
+    return 'Unknown';
+  }
+};
+
+// Enhanced device info detection
+const getEnhancedDeviceInfo = () => {
+  const userAgent = navigator.userAgent;
+  const platform = navigator.platform;
+  
+  // Detect specific devices and browsers
+  let deviceType = 'Device';
+  let browser = 'Unknown Browser';
+  
+  // Device detection
+  if (/iPhone/.test(userAgent)) deviceType = 'iPhone';
+  else if (/iPad/.test(userAgent)) deviceType = 'iPad';
+  else if (/Android/.test(userAgent)) deviceType = 'Android Phone';
+  else if (/Mac/.test(platform)) deviceType = 'Mac Computer';
+  else if (/Win/.test(platform)) deviceType = 'Windows Computer';
+  else if (/Linux/.test(platform)) deviceType = 'Linux Computer';
+  
+  // Browser detection
+  if (/Chrome/.test(userAgent) && !/Edg/.test(userAgent)) browser = 'Chrome';
+  else if (/Firefox/.test(userAgent)) browser = 'Firefox';
+  else if (/Safari/.test(userAgent) && !/Chrome/.test(userAgent)) browser = 'Safari';
+  else if (/Edg/.test(userAgent)) browser = 'Edge';
+  
+  return {
+    userAgent: userAgent,
+    platform: platform,
+    language: navigator.language,
+    screenSize: `${window.screen.width}x${window.screen.height}`,
+    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    deviceType: deviceType,
+    browser: browser,
+    cores: navigator.hardwareConcurrency || 'Unknown',
+    memory: navigator.deviceMemory ? `${navigator.deviceMemory}GB` : 'Unknown'
+  };
+};
+
 // Move the main tracking logic to a separate component
 function TrackContent() {
   const searchParams = useSearchParams();
@@ -21,63 +69,77 @@ function TrackContent() {
   }, []);
 
   useEffect(() => {
-    socket.emit("join_tracker", { tracker_id: trackerId });
+    const initializeTracking = async () => {
+      const deviceInfo = getEnhancedDeviceInfo();
+      const ipAddress = await getIPAddress();
+      
+      // Send enhanced device info with IP
+      socket.emit("join_tracker", { 
+        tracker_id: trackerId,
+        deviceInfo: {
+          ...deviceInfo,
+          ipAddress: ipAddress
+        }
+      });
 
-    if ("geolocation" in navigator) {
-      const options = {
-        enableHighAccuracy: true,
-        maximumAge: 0,
-        timeout: 5000,
-      };
+      if ("geolocation" in navigator) {
+        const options = {
+          enableHighAccuracy: true,
+          maximumAge: 0,
+          timeout: 5000,
+        };
 
-      const watchId = navigator.geolocation.watchPosition(
-        (pos) => {
-          const {
-            latitude,
-            longitude,
-            accuracy,
-            speed,
-            heading,
-            timestamp
-          } = pos.coords;
+        const watchId = navigator.geolocation.watchPosition(
+          (pos) => {
+            const {
+              latitude,
+              longitude,
+              accuracy,
+              speed,
+              heading,
+              timestamp
+            } = pos.coords;
 
-          socket.emit("update_location", {
-            tracker_id: trackerId,
-            lat: latitude,
-            lng: longitude,
-            accuracy: accuracy,
-            speed: speed || null,
-            heading: heading || null,
-            timestamp: timestamp
-          });
-        },
-        (err) => {
-          console.error("❌ Geolocation error:", err);
-          const getFallbackPosition = () => {
-            navigator.geolocation.getCurrentPosition(
-              (pos) => {
-                const { latitude, longitude, accuracy } = pos.coords;
-                socket.emit("update_location", {
-                  tracker_id: trackerId,
-                  lat: latitude,
-                  lng: longitude,
-                  accuracy: accuracy
-                });
-              },
-              null,
-              options
-            );
-          };
-          const fallbackInterval = setInterval(getFallbackPosition, 2000);
-          return () => clearInterval(fallbackInterval);
-        },
-        options
-      );
+            socket.emit("update_location", {
+              tracker_id: trackerId,
+              lat: latitude,
+              lng: longitude,
+              accuracy: accuracy,
+              speed: speed || null,
+              heading: heading || null,
+              timestamp: timestamp
+            });
+          },
+          (err) => {
+            console.error("❌ Geolocation error:", err);
+            const getFallbackPosition = () => {
+              navigator.geolocation.getCurrentPosition(
+                (pos) => {
+                  const { latitude, longitude, accuracy } = pos.coords;
+                  socket.emit("update_location", {
+                    tracker_id: trackerId,
+                    lat: latitude,
+                    lng: longitude,
+                    accuracy: accuracy
+                  });
+                },
+                null,
+                options
+              );
+            };
+            const fallbackInterval = setInterval(getFallbackPosition, 2000);
+            return () => clearInterval(fallbackInterval);
+          },
+          options
+        );
 
-      return () => {
-        navigator.geolocation.clearWatch(watchId);
-      };
-    }
+        return () => {
+          navigator.geolocation.clearWatch(watchId);
+        };
+      }
+    };
+
+    initializeTracking();
   }, [trackerId]);
 
   return (

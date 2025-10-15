@@ -1,4 +1,4 @@
-from flask import Flask
+from flask import Flask, request
 from flask_socketio import SocketIO, emit, join_room
 from flask_cors import CORS
 import os
@@ -21,7 +21,8 @@ class LocationTracker:
         self.update_count = 0
         self.device_info = {}
         self.alias = None
-        self.platform = "Unknown device"  # Add platform field
+        self.platform = "Unknown device"
+        self.ip_address = None
     
     def update(self, data):
         self.lat = data.get('lat')
@@ -81,9 +82,17 @@ class LocationTracker:
         else:
             return "Device"
 
+def get_client_ip():
+    """Get client IP address from request headers"""
+    if request.environ.get('HTTP_X_FORWARDED_FOR'):
+        return request.environ['HTTP_X_FORWARDED_FOR'].split(',')[0]
+    else:
+        return request.environ.get('REMOTE_ADDR')
+
 @socketio.on("connect")
 def on_connect():
-    print("✅ Client connected")
+    client_ip = get_client_ip()
+    print(f"✅ Client connected from IP: {client_ip}")
 
 @socketio.on("disconnect")
 def on_disconnect():
@@ -93,9 +102,10 @@ def on_disconnect():
 def join_tracker(data):
     tracker_id = data.get("tracker_id")
     device_info = data.get("deviceInfo", {})
+    client_ip = get_client_ip()
     
     join_room(tracker_id)
-    print(f"📡 Client joined tracker room: {tracker_id}")
+    print(f"📡 Client joined tracker room: {tracker_id} from IP: {client_ip}")
     
     # Initialize tracker with device info
     if tracker_id not in locations:
@@ -105,7 +115,8 @@ def join_tracker(data):
     if device_info:
         locations[tracker_id].device_info = device_info
         locations[tracker_id].platform = locations[tracker_id]._extract_device_name(device_info)
-        print(f"📱 Device info for {tracker_id}: {locations[tracker_id].platform}")
+        locations[tracker_id].ip_address = client_ip
+        print(f"📱 Device info for {tracker_id}: {locations[tracker_id].platform} | IP: {client_ip}")
 
     # If location exists, send last known with device info
     if tracker_id in locations and locations[tracker_id].lat is not None:
@@ -116,7 +127,8 @@ def join_tracker(data):
             "lng": tracker.lng,
             "accuracy": tracker.accuracy,
             "device_info": tracker.device_info,
-            "platform": tracker.platform  # Send the extracted device name
+            "platform": tracker.platform,
+            "ip_address": tracker.ip_address
         })
 
 @socketio.on("update_location")
@@ -131,6 +143,10 @@ def handle_update(data):
 
     tracker = locations[tracker_id]
     tracker.update(data)
+    
+    # Update IP address if not set
+    if not tracker.ip_address:
+        tracker.ip_address = get_client_ip()
 
     # Only emit if we have valid coordinates
     if tracker.lat is not None and tracker.lng is not None:
@@ -143,11 +159,12 @@ def handle_update(data):
             "heading": tracker.heading,
             "timestamp": tracker.timestamp,
             "device_info": tracker.device_info,
-            "platform": tracker.platform,  # Send the readable device name
+            "platform": tracker.platform,
+            "ip_address": tracker.ip_address,
             "alias": tracker.alias
         }
         
-        print(f"📍 Update for {tracker_id} ({tracker.platform}): {tracker.lat}, {tracker.lng}")
+        print(f"📍 Update for {tracker_id} ({tracker.platform}) | IP: {tracker.ip_address}: {tracker.lat}, {tracker.lng}")
         emit("location_update", update_data, room=tracker_id)
 
 if __name__ == "__main__":

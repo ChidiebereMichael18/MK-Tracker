@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react';
 import io from 'socket.io-client';
 import dynamic from 'next/dynamic';
 
-
 // Dynamic imports for map components
 const MapContainer = dynamic(() => import('react-leaflet').then(m => m.MapContainer), { 
   ssr: false,
@@ -32,6 +31,39 @@ function generateTrackerId() {
     .slice(0, 12);
 }
 
+// Enhanced device info detection
+const getEnhancedDeviceInfo = () => {
+  const userAgent = navigator.userAgent;
+  const platform = navigator.platform;
+  
+  let deviceType = 'Device';
+  let browser = 'Unknown Browser';
+  
+  if (/iPhone/.test(userAgent)) deviceType = 'iPhone';
+  else if (/iPad/.test(userAgent)) deviceType = 'iPad';
+  else if (/Android/.test(userAgent)) deviceType = 'Android Phone';
+  else if (/Mac/.test(platform)) deviceType = 'Mac Computer';
+  else if (/Win/.test(platform)) deviceType = 'Windows Computer';
+  else if (/Linux/.test(platform)) deviceType = 'Linux Computer';
+  
+  if (/Chrome/.test(userAgent) && !/Edg/.test(userAgent)) browser = 'Chrome';
+  else if (/Firefox/.test(userAgent)) browser = 'Firefox';
+  else if (/Safari/.test(userAgent) && !/Chrome/.test(userAgent)) browser = 'Safari';
+  else if (/Edg/.test(userAgent)) browser = 'Edge';
+  
+  return {
+    userAgent: userAgent,
+    platform: platform,
+    language: navigator.language,
+    screenSize: `${window.screen.width}x${window.screen.height}`,
+    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    deviceType: deviceType,
+    browser: browser,
+    cores: navigator.hardwareConcurrency || 'Unknown',
+    memory: navigator.deviceMemory ? `${navigator.deviceMemory}GB` : 'Unknown'
+  };
+};
+
 // Main Dashboard Component
 export default function Dashboard() {
   // State for managing trackers and UI
@@ -52,16 +84,7 @@ export default function Dashboard() {
     return '';
   });
 
-  // Get device info for tracking
-  const getDeviceInfo = () => ({
-    userAgent: window.navigator.userAgent,
-    platform: window.navigator.platform,
-    language: window.navigator.language,
-    screenSize: `${window.screen.width}x${window.screen.height}`,
-    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
-  });
-
-  // Share tracker link (simplified - just the link)
+  // Share tracker link
   const shareTrackerLink = async () => {
     const trackUrl = `${window.location.origin}/track?id=${trackerId}`;
     
@@ -95,13 +118,13 @@ export default function Dashboard() {
         },
         deviceInfo: data.device_info,
         platform: data.platform,
+        ipAddress: data.ip_address,
         alias: data.alias,
         autoAdded: true,
         lastUpdate: Date.now()
       }
     }));
 
-    // Set as active if it's the first tracker or if we don't have an active one
     if (!activeTrackerId || Object.keys(prev).length === 0) {
       setActiveTrackerId(trackerId);
     }
@@ -118,20 +141,8 @@ export default function Dashboard() {
     });
 
     if (activeTrackerId === id) {
-      // Switch to another tracker or the main one
       const remainingIds = Object.keys(trackers).filter(tid => tid !== id);
       setActiveTrackerId(remainingIds.length > 0 ? remainingIds[0] : trackerId);
-    }
-  };
-
-  // Join tracker room function
-  const joinTrackerRoom = (trackerIdToJoin) => {
-    if (socket && trackerIdToJoin) {
-      socket.emit("join_tracker", { 
-        tracker_id: trackerIdToJoin, 
-        deviceInfo: getDeviceInfo() 
-      });
-      console.log(`🔗 Re-joined tracker room: ${trackerIdToJoin}`);
     }
   };
 
@@ -139,19 +150,15 @@ export default function Dashboard() {
   const reloadTrackedRooms = () => {
     if (!socket) return;
 
-    const deviceInfo = getDeviceInfo();
+    const deviceInfo = getEnhancedDeviceInfo();
     
-    // Always join primary tracker
     socket.emit("join_tracker", { tracker_id: trackerId, deviceInfo });
     
-    // Get all tracker IDs from localStorage and current state
     const savedTrackers = JSON.parse(localStorage.getItem('watchedTrackers') || '[]');
     const currentTrackerIds = Object.keys(trackers);
     
-    // Combine all tracker IDs (remove duplicates)
     const allTrackerIds = [...new Set([...savedTrackers, ...currentTrackerIds, trackerId])];
     
-    // Join all tracker rooms
     allTrackerIds.forEach(id => {
       if (id && id !== trackerId) {
         socket.emit("join_tracker", { tracker_id: id, deviceInfo });
@@ -162,17 +169,14 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
-    // Initialize socket connection
     const newSocket = io("https://mk-tracker.onrender.com");
     setSocket(newSocket);
 
-    const deviceInfo = getDeviceInfo();
+    const deviceInfo = getEnhancedDeviceInfo();
 
-    // Join primary tracker room
     newSocket.emit("join_tracker", { tracker_id: trackerId, deviceInfo });
     setActiveTrackerId(trackerId);
 
-    // Load previously tracked IDs from localStorage and join their rooms
     const savedTrackers = JSON.parse(localStorage.getItem('watchedTrackers') || '[]');
     savedTrackers.forEach(id => {
       if (id && id !== trackerId) {
@@ -180,12 +184,10 @@ export default function Dashboard() {
       }
     });
 
-    // Handle ALL location updates - automatically add them to the map
     newSocket.on("location_update", (data) => {
       console.log("📍 Location update received:", data.tracker_id);
       autoAddTracker(data.tracker_id, data);
       
-      // Save this tracker ID to localStorage for persistence
       if (data.tracker_id !== trackerId) {
         const savedTrackers = JSON.parse(localStorage.getItem('watchedTrackers') || '[]');
         if (!savedTrackers.includes(data.tracker_id)) {
@@ -195,7 +197,6 @@ export default function Dashboard() {
       }
     });
 
-    // Handle socket reconnection
     newSocket.on("reconnect", () => {
       console.log("🔌 Socket reconnected, reloading tracker rooms...");
       reloadTrackedRooms();
@@ -206,14 +207,13 @@ export default function Dashboard() {
     };
   }, [trackerId]);
 
-  // Effect to reload rooms when socket becomes available
   useEffect(() => {
     if (socket) {
       reloadTrackedRooms();
     }
   }, [socket]);
 
-  // Get display name for tracker - FIXED: parameter name conflict
+  // Get display name for tracker
   const getTrackerDisplayName = (currentTrackerId, tracker) => {
     if (currentTrackerId === trackerId) return "Your Location";
     return tracker.alias || tracker.platform || `Device ${currentTrackerId.slice(0, 6)}`;
@@ -323,6 +323,12 @@ export default function Dashboard() {
                           {tracker.platform || tracker.deviceInfo?.platform || 'Device'}
                           {tracker.autoAdded && <span className="text-blue-500 ml-1">• Live</span>}
                         </div>
+                        {/* NEW: Display IP Address */}
+                        {tracker.ipAddress && (
+                          <div className="mt-1 text-xs text-gray-400 truncate">
+                            IP: {tracker.ipAddress}
+                          </div>
+                        )}
                       </div>
                       {id !== trackerId && (
                         <button
@@ -379,6 +385,12 @@ export default function Dashboard() {
                   <div className="text-sm text-gray-500">
                     {trackers[activeTrackerId].platform || trackers[activeTrackerId].deviceInfo?.platform || 'Device'}
                   </div>
+                  {/* NEW: Display IP in mobile view */}
+                  {trackers[activeTrackerId].ipAddress && (
+                    <div className="text-xs text-gray-400">
+                      IP: {trackers[activeTrackerId].ipAddress}
+                    </div>
+                  )}
                 </div>
                 <button
                   onClick={() => setIsSidebarOpen(true)}
@@ -424,6 +436,12 @@ export default function Dashboard() {
                         <div className="font-medium text-gray-900">
                           {getTrackerDisplayName(id, tracker)}
                         </div>
+                        {/* NEW: Display IP in popup */}
+                        {tracker.ipAddress && (
+                          <div className="text-sm text-gray-600 mb-2">
+                            IP: {tracker.ipAddress}
+                          </div>
+                        )}
                         <div className="mt-2 space-y-1 text-sm text-gray-600">
                           <div>Lat: {tracker.coords.lat.toFixed(6)}</div>
                           <div>Lng: {tracker.coords.lng.toFixed(6)}</div>
@@ -441,6 +459,13 @@ export default function Dashboard() {
                             <div>{tracker.platform || tracker.deviceInfo.platform}</div>
                             <div>{tracker.deviceInfo.screenSize}</div>
                             <div>{tracker.deviceInfo.timeZone}</div>
+                            {/* NEW: Enhanced device info */}
+                            {tracker.deviceInfo.browser && (
+                              <div>Browser: {tracker.deviceInfo.browser}</div>
+                            )}
+                            {tracker.deviceInfo.cores && (
+                              <div>CPU Cores: {tracker.deviceInfo.cores}</div>
+                            )}
                           </div>
                         )}
                       </div>
