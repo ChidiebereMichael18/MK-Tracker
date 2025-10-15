@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import io from 'socket.io-client';
 import dynamic from 'next/dynamic';
 
+
 // Dynamic imports for map components
 const MapContainer = dynamic(() => import('react-leaflet').then(m => m.MapContainer), { 
   ssr: false,
@@ -36,8 +37,8 @@ export default function Dashboard() {
   // State for managing trackers and UI
   const [trackers, setTrackers] = useState({});
   const [activeTrackerId, setActiveTrackerId] = useState(null);
-  const [newTrackerId, setNewTrackerId] = useState('');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [socket, setSocket] = useState(null);
 
   // Generate and manage primary tracker ID
   const [trackerId] = useState(() => {
@@ -60,62 +61,55 @@ export default function Dashboard() {
     timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
   });
 
-  // Share tracker ID
-  const shareTrackerId = async () => {
-    const shareData = {
-      title: 'MK-Tracker Location Share',
-      text: `Track my location using this ID: ${trackerId}`,
-      url: `${window.location.origin}/track?id=${trackerId}`
-    };
-
+  // Share tracker link (simplified - just the link)
+  const shareTrackerLink = async () => {
+    const trackUrl = `${window.location.origin}/track?id=${trackerId}`;
+    
     try {
       if (navigator.share) {
-        await navigator.share(shareData);
+        await navigator.share({
+          title: 'Track My Location',
+          text: 'Click this link to share your location with me:',
+          url: trackUrl
+        });
       } else {
-        await copyToClipboard(shareData.url);
+        await navigator.clipboard.writeText(trackUrl);
+        alert('Tracking link copied! Send this to anyone you want to track.');
       }
     } catch (err) {
       console.error('Error sharing:', err);
     }
   };
 
-  // Copy to clipboard with feedback
-  const copyToClipboard = async (text) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      alert('Copied to clipboard!');
-    } catch (err) {
-      console.error('Failed to copy:', err);
-    }
-  };
+  // Automatically add tracker when location data is received
+  const autoAddTracker = (trackerId, data) => {
+    setTrackers(prev => ({
+      ...prev,
+      [trackerId]: {
+        coords: { lat: data.lat, lng: data.lng },
+        info: {
+          accuracy: data.accuracy,
+          speed: data.speed,
+          heading: data.heading,
+          timestamp: data.timestamp
+        },
+        deviceInfo: data.device_info,
+        platform: data.platform,
+        alias: data.alias,
+        autoAdded: true,
+        lastUpdate: Date.now()
+      }
+    }));
 
-  // Handle adding a new tracker
-  const addTracker = (id) => {
-    if (!id || id === trackerId) return;
-    if (Object.keys(trackers).length >= 5) {
-      alert('Maximum limit of 5 trackers reached');
-      return;
-    }
-
-    const savedTrackers = JSON.parse(localStorage.getItem('watchedTrackers') || '[]');
-    if (!savedTrackers.includes(id)) {
-      const newTrackerIds = [...savedTrackers, id];
-      localStorage.setItem('watchedTrackers', JSON.stringify(newTrackerIds));
-      
-      const socket = io("https://mk-tracker.onrender.com");
-      socket.emit("join_tracker", { 
-        tracker_id: id,
-        deviceInfo: getDeviceInfo()
-      });
+    // Set as active if it's the first tracker or if we don't have an active one
+    if (!activeTrackerId || Object.keys(prev).length === 0) {
+      setActiveTrackerId(trackerId);
     }
   };
 
   // Remove a tracker
   const removeTracker = (id) => {
     if (id === trackerId) return;
-    const savedTrackers = JSON.parse(localStorage.getItem('watchedTrackers') || '[]');
-    const newTrackerIds = savedTrackers.filter(t => t !== id);
-    localStorage.setItem('watchedTrackers', JSON.stringify(newTrackerIds));
     
     setTrackers(prev => {
       const newTrackers = { ...prev };
@@ -124,46 +118,114 @@ export default function Dashboard() {
     });
 
     if (activeTrackerId === id) {
-      setActiveTrackerId(trackerId);
+      // Switch to another tracker or the main one
+      const remainingIds = Object.keys(trackers).filter(tid => tid !== id);
+      setActiveTrackerId(remainingIds.length > 0 ? remainingIds[0] : trackerId);
     }
   };
 
-  useEffect(() => {
-    const socket = io("https://mk-tracker.onrender.com");
+  // Join tracker room function
+  const joinTrackerRoom = (trackerIdToJoin) => {
+    if (socket && trackerIdToJoin) {
+      socket.emit("join_tracker", { 
+        tracker_id: trackerIdToJoin, 
+        deviceInfo: getDeviceInfo() 
+      });
+      console.log(`🔗 Re-joined tracker room: ${trackerIdToJoin}`);
+    }
+  };
+
+  // Load and re-join all tracked rooms
+  const reloadTrackedRooms = () => {
+    if (!socket) return;
+
     const deviceInfo = getDeviceInfo();
-
-    // Join primary tracker
+    
+    // Always join primary tracker
     socket.emit("join_tracker", { tracker_id: trackerId, deviceInfo });
-    setActiveTrackerId(trackerId);
-
-    // Load saved trackers
+    
+    // Get all tracker IDs from localStorage and current state
     const savedTrackers = JSON.parse(localStorage.getItem('watchedTrackers') || '[]');
-    savedTrackers.forEach(id => {
-      if (id !== trackerId) {
+    const currentTrackerIds = Object.keys(trackers);
+    
+    // Combine all tracker IDs (remove duplicates)
+    const allTrackerIds = [...new Set([...savedTrackers, ...currentTrackerIds, trackerId])];
+    
+    // Join all tracker rooms
+    allTrackerIds.forEach(id => {
+      if (id && id !== trackerId) {
         socket.emit("join_tracker", { tracker_id: id, deviceInfo });
       }
     });
 
-    // Handle location updates
-    socket.on("location_update", (data) => {
-      setTrackers(prev => ({
-        ...prev,
-        [data.tracker_id]: {
-          coords: { lat: data.lat, lng: data.lng },
-          info: {
-            accuracy: data.accuracy,
-            speed: data.speed,
-            heading: data.heading,
-            timestamp: data.timestamp
-          },
-          deviceInfo: data.device_info,
-          alias: data.alias
-        }
-      }));
+    console.log(`🔄 Re-joined ${allTrackerIds.length} tracker rooms`);
+  };
+
+  useEffect(() => {
+    // Initialize socket connection
+    const newSocket = io("https://mk-tracker.onrender.com");
+    setSocket(newSocket);
+
+    const deviceInfo = getDeviceInfo();
+
+    // Join primary tracker room
+    newSocket.emit("join_tracker", { tracker_id: trackerId, deviceInfo });
+    setActiveTrackerId(trackerId);
+
+    // Load previously tracked IDs from localStorage and join their rooms
+    const savedTrackers = JSON.parse(localStorage.getItem('watchedTrackers') || '[]');
+    savedTrackers.forEach(id => {
+      if (id && id !== trackerId) {
+        newSocket.emit("join_tracker", { tracker_id: id, deviceInfo });
+      }
     });
 
-    return () => socket.disconnect();
+    // Handle ALL location updates - automatically add them to the map
+    newSocket.on("location_update", (data) => {
+      console.log("📍 Location update received:", data.tracker_id);
+      autoAddTracker(data.tracker_id, data);
+      
+      // Save this tracker ID to localStorage for persistence
+      if (data.tracker_id !== trackerId) {
+        const savedTrackers = JSON.parse(localStorage.getItem('watchedTrackers') || '[]');
+        if (!savedTrackers.includes(data.tracker_id)) {
+          const newTrackerIds = [...savedTrackers, data.tracker_id];
+          localStorage.setItem('watchedTrackers', JSON.stringify(newTrackerIds));
+        }
+      }
+    });
+
+    // Handle socket reconnection
+    newSocket.on("reconnect", () => {
+      console.log("🔌 Socket reconnected, reloading tracker rooms...");
+      reloadTrackedRooms();
+    });
+
+    return () => {
+      newSocket.disconnect();
+    };
   }, [trackerId]);
+
+  // Effect to reload rooms when socket becomes available
+  useEffect(() => {
+    if (socket) {
+      reloadTrackedRooms();
+    }
+  }, [socket]);
+
+  // Get display name for tracker - FIXED: parameter name conflict
+  const getTrackerDisplayName = (currentTrackerId, tracker) => {
+    if (currentTrackerId === trackerId) return "Your Location";
+    return tracker.alias || tracker.platform || `Device ${currentTrackerId.slice(0, 6)}`;
+  };
+
+  // Refresh all tracker connections
+  const refreshAllTrackers = () => {
+    if (socket) {
+      reloadTrackedRooms();
+      alert('Refreshed all tracker connections!');
+    }
+  };
 
   return (
     <div className="h-screen flex flex-col bg-gray-50">
@@ -182,55 +244,41 @@ export default function Dashboard() {
             {/* Share Section */}
             <div className="flex items-center gap-3">
               <div className="hidden sm:flex items-center gap-2 text-sm text-gray-500">
-                Your ID:
-                <code className="px-2 py-1 bg-gray-50 rounded font-mono text-gray-800">
-                  {trackerId}
+                Your Tracker:
+                <code className="px-2 py-1 bg-gray-50 rounded font-mono text-gray-800 text-xs">
+                  {trackerId.slice(0, 8)}...
                 </code>
               </div>
               <button
-                onClick={shareTrackerId}
-                className="inline-flex items-center gap-2 px-3 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors"
+                onClick={shareTrackerLink}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" 
                     d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684z" />
                 </svg>
-                <span className="hidden sm:inline">Share TrackingId</span>
-                <span className="sm:hidden">Share</span>
+                <span>Get Tracking Link</span>
+              </button>
+              <button
+                onClick={refreshAllTrackers}
+                className="inline-flex items-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+                title="Refresh all tracker connections"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                <span className="hidden sm:inline">Refresh</span>
               </button>
             </div>
           </div>
 
-          {/* Bottom Bar */}
+          {/* Instructions */}
           <div className="flex flex-wrap items-center justify-between gap-4 pt-4">
-            <div className="w-full sm:w-auto flex items-center gap-2">
-              <input
-                type="text"
-                value={newTrackerId}
-                onChange={(e) => setNewTrackerId(e.target.value)}
-                placeholder="Enter tracker ID to follow"
-                className="flex-1 sm:flex-none min-w-0 sm:w-64 px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                onKeyPress={(e) => {
-                  if (e.key === 'Enter' && newTrackerId) {
-                    addTracker(newTrackerId);
-                    setNewTrackerId('');
-                  }
-                }}
-              />
-              <button
-                onClick={() => {
-                  if (newTrackerId) {
-                    addTracker(newTrackerId);
-                    setNewTrackerId('');
-                  }
-                }}
-                className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                Add
-              </button>
+            <div className="text-sm text-gray-600">
+              <span className="font-medium">{Object.keys(trackers).length} devices</span> being tracked
             </div>
-            <div className="text-sm text-gray-500">
-              Tracking <span className="font-medium">{Object.keys(trackers).length}/5</span> devices
+            <div className="text-xs text-gray-500">
+              Share your link • Click = Tracked • Auto-reconnect on refresh
             </div>
           </div>
         </div>
@@ -245,7 +293,7 @@ export default function Dashboard() {
               onClick={() => setIsSidebarOpen(prev => !prev)}
               className="flex items-center justify-between w-full px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 rounded-lg"
             >
-              <span>Active Trackers ({Object.keys(trackers).length})</span>
+              <span>Tracked Devices ({Object.keys(trackers).length})</span>
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
               </svg>
@@ -269,10 +317,11 @@ export default function Dashboard() {
                     <div className="flex justify-between items-start gap-2">
                       <div className="min-w-0 flex-1">
                         <div className="font-medium text-gray-900 truncate">
-                          {tracker.alias || `Tracker ${id.slice(0, 6)}`}
+                          {getTrackerDisplayName(id, tracker)}
                         </div>
                         <div className="mt-1 text-sm text-gray-500 truncate">
-                          {tracker.deviceInfo?.platform || 'Unknown device'}
+                          {tracker.platform || tracker.deviceInfo?.platform || 'Device'}
+                          {tracker.autoAdded && <span className="text-blue-500 ml-1">• Live</span>}
                         </div>
                       </div>
                       {id !== trackerId && (
@@ -281,7 +330,8 @@ export default function Dashboard() {
                             e.stopPropagation();
                             removeTracker(id);
                           }}
-                          className="p-1 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100"
+                          className="p-1 text-gray-400 hover:text-red-500 rounded-full hover:bg-gray-100 transition-colors"
+                          title="Remove tracker"
                         >
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
@@ -289,15 +339,28 @@ export default function Dashboard() {
                         </button>
                       )}
                     </div>
-                    {tracker.deviceInfo && (
+                    {tracker.info && (
                       <div className="mt-2 pt-2 border-t border-gray-100">
-                        <div className="text-xs text-gray-500 truncate">
-                          {tracker.deviceInfo.screenSize} • {tracker.deviceInfo.timeZone}
+                        <div className="text-xs text-gray-500">
+                          Accuracy: ±{tracker.info.accuracy?.toFixed(0) || '?'}m • 
+                          Last update: {tracker.lastUpdate ? new Date(tracker.lastUpdate).toLocaleTimeString() : 'Now'}
                         </div>
                       </div>
                     )}
                   </div>
                 ))}
+                
+                {/* Empty state */}
+                {Object.keys(trackers).length === 0 && (
+                  <div className="text-center p-6 text-gray-500">
+                    <svg className="w-12 h-12 mx-auto mb-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                    <p>No locations yet</p>
+                    <p className="text-sm mt-1">Share your link to start tracking</p>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -311,10 +374,10 @@ export default function Dashboard() {
               <div className="flex items-center justify-between">
                 <div>
                   <div className="font-medium text-gray-900">
-                    {trackers[activeTrackerId].alias || `Tracker ${activeTrackerId.slice(0, 6)}`}
+                    {getTrackerDisplayName(activeTrackerId, trackers[activeTrackerId])}
                   </div>
                   <div className="text-sm text-gray-500">
-                    {trackers[activeTrackerId].deviceInfo?.platform || 'Unknown device'}
+                    {trackers[activeTrackerId].platform || trackers[activeTrackerId].deviceInfo?.platform || 'Device'}
                   </div>
                 </div>
                 <button
@@ -354,12 +417,12 @@ export default function Dashboard() {
                   <Marker
                     key={id}
                     position={[tracker.coords.lat, tracker.coords.lng]}
-                    opacity={id === activeTrackerId ? 1 : 0.6}
+                    opacity={id === activeTrackerId ? 1 : 0.7}
                   >
                     <Popup className="rounded-lg">
                       <div className="p-3">
                         <div className="font-medium text-gray-900">
-                          {tracker.alias || `Tracker ${id.slice(0, 6)}`}
+                          {getTrackerDisplayName(id, tracker)}
                         </div>
                         <div className="mt-2 space-y-1 text-sm text-gray-600">
                           <div>Lat: {tracker.coords.lat.toFixed(6)}</div>
@@ -375,7 +438,7 @@ export default function Dashboard() {
                         </div>
                         {tracker.deviceInfo && (
                           <div className="mt-3 pt-2 border-t border-gray-100 text-xs text-gray-500 space-y-0.5">
-                            <div>{tracker.deviceInfo.platform}</div>
+                            <div>{tracker.platform || tracker.deviceInfo.platform}</div>
                             <div>{tracker.deviceInfo.screenSize}</div>
                             <div>{tracker.deviceInfo.timeZone}</div>
                           </div>
@@ -387,11 +450,22 @@ export default function Dashboard() {
               </MapContainer>
             ) : (
               <div className="h-full flex items-center justify-center p-4">
-                <div className="text-center max-w-sm">
-                  <div className="text-xl font-medium text-gray-900 mb-2">No tracker selected</div>
-                  <p className="text-gray-500">
-                    Select a tracker from the list {isSidebarOpen ? '' : 'or click the menu button'} to view its location
+                <div className="text-center max-w-md">
+                  <div className="w-16 h-16 bg-blue-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                    <svg className="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                    </svg>
+                  </div>
+                  <div className="text-xl font-medium text-gray-900 mb-2">Ready to Track</div>
+                  <p className="text-gray-600 mb-4">
+                    Click "Get Tracking Link" and share it with anyone. Their location will appear here automatically when they click your link.
                   </p>
+                  <button
+                    onClick={shareTrackerLink}
+                    className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    Get Your Tracking Link
+                  </button>
                 </div>
               </div>
             )}
