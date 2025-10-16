@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import io from 'socket.io-client';
 import dynamic from 'next/dynamic';
 
@@ -105,7 +105,7 @@ export default function Dashboard() {
   };
 
   // Automatically add tracker when location data is received
-  const autoAddTracker = (trackerId, data) => {
+  const autoAddTracker = useCallback((trackerId, data) => {
     setTrackers(prev => ({
       ...prev,
       [trackerId]: {
@@ -128,7 +128,7 @@ export default function Dashboard() {
     if (!activeTrackerId || Object.keys(prev).length === 0) {
       setActiveTrackerId(trackerId);
     }
-  };
+  }, [activeTrackerId]);
 
   // Remove a tracker
   const removeTracker = (id) => {
@@ -147,7 +147,7 @@ export default function Dashboard() {
   };
 
   // Load and re-join all tracked rooms
-  const reloadTrackedRooms = () => {
+  const reloadTrackedRooms = useCallback(() => {
     if (!socket) return;
 
     const deviceInfo = getEnhancedDeviceInfo();
@@ -166,7 +166,7 @@ export default function Dashboard() {
     });
 
     console.log(`🔄 Re-joined ${allTrackerIds.length} tracker rooms`);
-  };
+  }, [socket, trackerId, trackers]);
 
   useEffect(() => {
     const newSocket = io("https://mk-tracker.onrender.com");
@@ -205,13 +205,13 @@ export default function Dashboard() {
     return () => {
       newSocket.disconnect();
     };
-  }, [trackerId]);
+  }, [trackerId, autoAddTracker, reloadTrackedRooms]);
 
   useEffect(() => {
     if (socket) {
       reloadTrackedRooms();
     }
-  }, [socket]);
+  }, [socket, reloadTrackedRooms]);
 
   // Get display name for tracker
   const getTrackerDisplayName = (currentTrackerId, tracker) => {
@@ -419,7 +419,7 @@ export default function Dashboard() {
               >
                 <TileLayer
                   url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                  attribution='&copy; <a href=&quot;https://www.openstreetmap.org/copyright&quot;>OpenStreetMap</a>'
                   maxNativeZoom={19}
                   maxZoom={19}
                 />
@@ -483,7 +483,7 @@ export default function Dashboard() {
                   </div>
                   <div className="text-xl font-medium text-gray-900 mb-2">Ready to Track</div>
                   <p className="text-gray-600 mb-4">
-                    Click "Get Tracking Link" and share it with anyone. Their location will appear here automatically when they click your link.
+                    Click &quot;Get Tracking Link&quot; and share it with anyone. Their location will appear here automatically when they click your link.
                   </p>
                   <button
                     onClick={shareTrackerLink}
