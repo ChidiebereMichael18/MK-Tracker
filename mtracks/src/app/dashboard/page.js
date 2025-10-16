@@ -91,8 +91,6 @@ export default function Dashboard() {
     try {
       if (navigator.share) {
         await navigator.share({
-          title: 'Track My Location',
-          text: 'Click this link to share your location with me:',
           url: trackUrl
         });
       } else {
