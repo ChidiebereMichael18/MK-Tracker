@@ -1,78 +1,163 @@
-@import "https://unpkg.com/leaflet@1.7.1/dist/leaflet.css";
-@import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
-/* Marker drop animation */
-@keyframes markerDrop {
-  0% {
-    transform: translateY(-100px);
-    opacity: 0;
-  }
-  60% {
-    transform: translateY(25px);
-    opacity: 1;
-  }
-  100% {
-    transform: translateY(0);
-    opacity: 1;
-  }
-}
-
-.animate-bounce-once {
-  animation: markerDrop 1s ease-out forwards;
-}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Core palette — dark charcoal, NOT pure black */
+  --bg:          #0e0e10;
+  --bg-1:        #141416;
+  --bg-2:        #1a1a1e;
+  --bg-3:        #222228;
+
+  /* Borders */
+  --line:        #27272f;
+  --line-bright: #333340;
+
+  /* Text */
+  --t1: #f2f2f5;
+  --t2: #9898a8;
+  --t3: #55555f;
+
+  /* Single accent — electric indigo */
+  --accent:      #6366f1;
+  --accent-soft: rgba(99,102,241,0.12);
+  --accent-glow: rgba(99,102,241,0.25);
+
+  /* Status colors */
+  --green:  #22c55e;
+  --green-soft: rgba(34,197,94,0.1);
+  --yellow: #eab308;
+  --red:    #ef4444;
+
+  /* Mono font */
+  --mono: 'JetBrains Mono', 'Fira Mono', monospace;
 }
 
-:root {
-  --font-sans: var(--font-inter);
-  --font-display: var(--font-plus-jakarta);
+html, body { height: 100%; background: var(--bg); color: var(--t1); font-family: 'Inter', -apple-system, sans-serif; -webkit-font-smoothing: antialiased; font-size: 14px; line-height: 1.5; }
+
+::-webkit-scrollbar { width: 3px; height: 3px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--line-bright); border-radius: 2px; }
+
+/* ─── Leaflet dark overrides ─────────────────────────────────────────── */
+.leaflet-container { background: var(--bg) !important; font-family: 'Inter', sans-serif !important; }
+.leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(0.75) contrast(0.9) saturate(0.6); }
+.leaflet-popup-content-wrapper { background: var(--bg-2) !important; color: var(--t1) !important; border: 1px solid var(--line-bright) !important; border-radius: 10px !important; box-shadow: 0 8px 24px rgba(0,0,0,0.5) !important; }
+.leaflet-popup-tip { background: var(--bg-2) !important; }
+.leaflet-control-zoom a { background: var(--bg-2) !important; color: var(--t2) !important; border-color: var(--line) !important; }
+.leaflet-control-zoom a:hover { background: var(--bg-3) !important; color: var(--t1) !important; }
+.leaflet-bar { border: 1px solid var(--line) !important; border-radius: 8px !important; overflow: hidden; box-shadow: none !important; }
+.leaflet-popup-close-button { color: var(--t2) !important; }
+
+/* ─── Keyframes ───────────────────────────────────────────────────────── */
+@keyframes fade-up { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes bounce-3 {
+  0%,80%,100% { transform: translateY(0); opacity: 0.4; }
+  40%          { transform: translateY(-6px); opacity: 1; }
 }
 
-@layer base {
-  html {
-    font-family: var(--font-sans);
-  }
-  
-  h1, h2, h3, h4, h5, h6 {
-    font-family: var(--font-display);
-  }
+.fade-up { animation: fade-up 0.35s ease both; }
+
+/* ─── Shared atoms ────────────────────────────────────────────────────── */
+.badge-live {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 2px 8px; border-radius: 4px;
+  background: var(--green-soft);
+  border: 1px solid rgba(34,197,94,0.2);
+  font-size: 11px; font-weight: 600; letter-spacing: .04em; color: var(--green);
+}
+.badge-live::before {
+  content: ''; display: inline-block;
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--green);
+  animation: blink 2s infinite;
 }
 
-/* @media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-} */
+.mono { font-family: var(--mono); }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+.btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 8px 16px; border-radius: 7px; border: none;
+  font-size: 13px; font-weight: 600; cursor: pointer;
+  transition: background 0.15s, opacity 0.15s;
+}
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary:hover { background: #4f51e0; }
+.btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-ghost { background: var(--bg-3); color: var(--t2); border: 1px solid var(--line); }
+.btn-ghost:hover { background: var(--line); color: var(--t1); }
+
+.input {
+  width: 100%; padding: 9px 13px;
+  background: var(--bg-1); border: 1px solid var(--line);
+  border-radius: 7px; color: var(--t1);
+  font-size: 13px; outline: none; font-family: inherit;
+  transition: border-color 0.15s;
+}
+.input:focus { border-color: var(--accent); }
+.input::placeholder { color: var(--t3); }
+
+.card {
+  background: var(--bg-1);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  transition: all 0.2s ease;
 }
 
-/* Map container styles */
-.leaflet-container {
-  width: 100%;
-  height: 100%;
-  z-index: 1;
+/* ─── Landing page & Cyber UI helpers ────────────────────────────────── */
+.landing-cta {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: var(--accent); color: #fff;
+  padding: 12px 30px; border-radius: 8px;
+  font-size: 14px; font-weight: 600; text-decoration: none;
+  transition: background 0.15s, transform 0.15s, box-shadow 0.15s;
+  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.35);
+}
+.landing-cta:hover { 
+  background: #4f51e0; 
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(99, 102, 241, 0.5);
 }
 
-/* Ensure proper stacking context for popups */
-.leaflet-popup-content-wrapper {
-  background: white;
-  color: #333;
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+.cyber-grid {
+  background-image: 
+    linear-gradient(rgba(255, 255, 255, 0.015) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.015) 1px, transparent 1px);
+  background-size: 40px 40px;
+  background-position: center center;
 }
 
-/* Smooth zoom animations */
-.leaflet-fade-anim .leaflet-tile,.leaflet-zoom-anim .leaflet-zoom-animated {
-  will-change: transform;
-  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+.glow-card:hover {
+  border-color: rgba(99, 102, 241, 0.35) !important;
+  box-shadow: 0 0 25px rgba(99, 102, 241, 0.08);
+  transform: translateY(-2px);
 }
+
+.glow-text {
+  text-shadow: 0 0 10px rgba(99, 102, 241, 0.4);
+}
+
+.pulse-indicator {
+  position: relative;
+}
+.pulse-indicator::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 1.5px solid var(--accent);
+  animation: radar-pulse 2s infinite linear;
+}
+
+@keyframes radar-pulse {
+  0% { transform: scale(1); opacity: 0.8; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+
+@keyframes grid-scroll {
+  from { background-position: 0 0; }
+  to { background-position: 40px 40px; }
+}
+

