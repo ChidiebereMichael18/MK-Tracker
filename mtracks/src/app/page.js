@@ -149,7 +149,6 @@ export default function Home() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 24, flexWrap: 'wrap' }}>
             <div style={{ display: 'flex', gap: 20, fontSize: 11, color: 'var(--t3)', fontFamily: 'var(--mono)' }}>
               <div>SOCKETS: ONLINE</div>
-              <div>STUN/TURN: ACTIVE</div>
               <div>VER: 2.1.0-PRO</div>
               <div style={{ color: 'var(--accent)', fontWeight: 600 }}>BUILT BY MIKE</div>
             </div>
