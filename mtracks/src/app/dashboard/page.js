@@ -218,18 +218,128 @@ function PhoneIntelTab() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
+  const [history, setHistory] = useState([]);
+  const [lastApiSearchDate, setLastApiSearchDate] = useState('');
+
+  // Load history and daily limit date from localStorage on client mount
+  useEffect(() => {
+    const saved = localStorage.getItem('phoneIntelHistory');
+    if (saved) {
+      try {
+        setHistory(JSON.parse(saved));
+      } catch (e) {
+        console.error('Error loading phone intel history:', e);
+      }
+    }
+    setLastApiSearchDate(localStorage.getItem('phoneIntelLastApiSearchDate') || '');
+  }, []);
+
+  const saveHistory = (newHistory) => {
+    setHistory(newHistory);
+    localStorage.setItem('phoneIntelHistory', JSON.stringify(newHistory));
+  };
+
+  // Helper to normalize number formatting for comparison
+  const normalizeNumber = (num) => {
+    return (num || '').replace(/[\s\-\(\)\+]/g, '');
+  };
+
+  const cleanInput = normalizeNumber(phone);
+
+  // Find if current typed phone number matches any item in the history
+  const matchingCachedItem = cleanInput ? history.find(item => {
+    return normalizeNumber(item.number) === cleanInput || normalizeNumber(item.intlFormat) === cleanInput;
+  }) : null;
+
+  const todayStr = new Date().toDateString();
+  const isDailyLimitReached = lastApiSearchDate === todayStr;
 
   const lookup = async () => {
-    if (!phone.trim()) return;
-    setLoading(true); setError(''); setResult(null);
+    const inputVal = phone.trim();
+    if (!inputVal) return;
+
+    // Clean number formatting to verify cache matches
+    const cleanSearch = normalizeNumber(inputVal);
+    
+    // Find inside current local history cache
+    const cached = history.find(item => {
+      return normalizeNumber(item.number) === cleanSearch || normalizeNumber(item.intlFormat) === cleanSearch;
+    });
+
+    if (cached) {
+      setResult({ ...cached, isCached: true });
+      setError('');
+      return;
+    }
+
+    // Check if limit is reached for today (1 API lookup per day)
+    if (isDailyLimitReached) {
+      setError('Daily limit reached. You can only perform 1 new API search per day to protect your limit. Please use a cached number.');
+      return;
+    }
+
+    // Call API if not in cache
+    await forceLookup(inputVal);
+  };
+
+  const forceLookup = async (targetPhone) => {
+    const numToSearch = targetPhone || phone;
+    if (!numToSearch.trim()) return;
+
+    const currentTodayStr = new Date().toDateString();
+    // Re-check daily limit state
+    const currentLastApiSearch = localStorage.getItem('phoneIntelLastApiSearchDate');
+    if (currentLastApiSearch === currentTodayStr) {
+      setError('Daily limit reached. You can only perform 1 new API search per day to protect your limit. Please use a cached number.');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+    setResult(null);
+
     try {
-      const res  = await fetch(`/api/phone?number=${encodeURIComponent(phone.trim())}`);
+      const res = await fetch(`/api/phone?number=${encodeURIComponent(numToSearch.trim())}`);
       const data = await res.json();
-      if (data.error === 'no_keys') setError('no_keys');
-      else if (data.error) setError(data.message || 'Lookup failed');
-      else setResult(data);
-    } catch { setError('Network error. Check connection.'); }
-    finally { setLoading(false); }
+
+      if (data.error === 'no_keys') {
+        setError('no_keys');
+      } else if (data.error) {
+        setError(data.message || 'Lookup failed');
+      } else {
+        const freshResult = { ...data, isCached: false };
+        setResult(freshResult);
+
+        // Save last API lookup date since the lookup succeeded
+        localStorage.setItem('phoneIntelLastApiSearchDate', currentTodayStr);
+        setLastApiSearchDate(currentTodayStr);
+
+        // Prepend to history, avoid duplicates, cap at 10 items
+        const updatedHistory = [
+          data,
+          ...history.filter(item => item.number !== data.number && item.intlFormat !== data.intlFormat)
+        ].slice(0, 10);
+        saveHistory(updatedHistory);
+      }
+    } catch {
+      setError('Network error. Check connection.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const deleteHistoryItem = (e, itemToDelete) => {
+    e.stopPropagation(); // Stop from clicking row to load
+    const updatedHistory = history.filter(
+      item => item.number !== itemToDelete.number && item.intlFormat !== itemToDelete.intlFormat
+    );
+    saveHistory(updatedHistory);
+  };
+
+  const clearAllHistory = () => {
+    if (confirm('Clear all search history?')) {
+      saveHistory([]);
+    }
   };
 
   const copyReport = async () => {
@@ -237,7 +347,8 @@ function PhoneIntelTab() {
     await navigator.clipboard.writeText(
       `Number: ${result.number}\nValid: ${result.valid}\nCountry: ${result.country}\nCarrier: ${result.carrier}\nType: ${result.lineType}\nRisk: ${result.riskScore}% (${result.riskLevel})`
     );
-    setCopied(true); setTimeout(() => setCopied(false), 2000);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   return (
@@ -248,10 +359,11 @@ function PhoneIntelTab() {
         <p style={{ fontSize: 12, color: 'var(--t3)' }}>Carrier · Line type · Country · Risk score</p>
       </div>
 
-      {/* Search */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 24 }}>
+      {/* Search Bar */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
         <input
-          className="input mono" value={phone}
+          className="input mono"
+          value={phone}
           onChange={e => setPhone(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && lookup()}
           placeholder="+44 7700 900123"
@@ -263,6 +375,64 @@ function PhoneIntelTab() {
           ) : 'Search'}
         </button>
       </div>
+
+      {/* Real-time Cache / Limit Alert Indicator */}
+      {matchingCachedItem && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: -6, marginBottom: 16, fontSize: 11.5, color: 'var(--green)' }}>
+          <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: 'var(--green)' }} />
+          <span>Cached report available. This search is free (0 API requests).</span>
+        </div>
+      )}
+
+      {!matchingCachedItem && phone.trim() && isDailyLimitReached && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: -6, marginBottom: 16, fontSize: 11.5, color: 'var(--red)' }}>
+          <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: 'var(--red)' }} />
+          <span>Daily limit reached. This new search will be blocked.</span>
+        </div>
+      )}
+
+      {/* Quick selection tags */}
+      {history.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: -6, marginBottom: 20, alignItems: 'center' }}>
+          <span style={{ fontSize: 11, color: 'var(--t3)', marginRight: 4 }}>Recent:</span>
+          {history.slice(0, 4).map((item, idx) => (
+            <button
+              key={idx}
+              onClick={() => {
+                setPhone(item.intlFormat || item.number);
+                setResult({ ...item, isCached: true });
+                setError('');
+              }}
+              style={{
+                background: 'var(--bg-3)',
+                border: '1px solid var(--line)',
+                borderRadius: 12,
+                padding: '3px 10px',
+                fontSize: 11,
+                color: 'var(--t2)',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+                transition: 'all .15s ease'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'var(--accent-soft)';
+                e.currentTarget.style.borderColor = 'var(--accent)';
+                e.currentTarget.style.color = 'var(--accent)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'var(--bg-3)';
+                e.currentTarget.style.borderColor = 'var(--line)';
+                e.currentTarget.style.color = 'var(--t2)';
+              }}
+            >
+              <span>{item.flag}</span>
+              <span className="mono" style={{ fontSize: 10.5 }}>{item.intlFormat || item.number}</span>
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* No-keys notice */}
       {error === 'no_keys' && (
@@ -281,16 +451,16 @@ ABSTRACT_API_KEY=your_key`}
         </div>
       )}
 
-      {/* Error */}
+      {/* Error display */}
       {error && error !== 'no_keys' && (
         <div style={{ padding: '10px 14px', background: 'rgba(239,68,68,.08)', border: '1px solid rgba(239,68,68,.2)', borderRadius: 7, fontSize: 12, color: 'var(--red)', marginBottom: 16 }}>
           {error}
         </div>
       )}
 
-      {/* Result */}
+      {/* Search results view */}
       {result && (
-        <div className="card fade-up" style={{ overflow: 'hidden' }}>
+        <div className="card fade-up" style={{ overflow: 'hidden', marginBottom: 24 }}>
           {/* Top strip */}
           <div style={{ padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid var(--line)' }}>
             <div>
@@ -305,12 +475,40 @@ ABSTRACT_API_KEY=your_key`}
                 }}>
                   {result.valid ? 'VALID' : 'INVALID'}
                 </span>
+                
+                {/* Historical data warning badge */}
+                {result.isCached && (
+                  <span style={{
+                    padding: '2px 6px', borderRadius: 4, fontSize: 10, fontWeight: 700,
+                    background: 'var(--bg-3)', color: 'var(--t2)', border: '1px solid var(--line)'
+                  }}>
+                    CACHED
+                  </span>
+                )}
               </div>
-              <div style={{ fontSize: 11, color: 'var(--t3)' }}>via {result.source} · {new Date().toLocaleTimeString()}</div>
+              <div style={{ fontSize: 11, color: 'var(--t3)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span>via {result.source}</span>
+                {result.isCached && (
+                  <>
+                    <span>•</span>
+                    <button 
+                      onClick={() => forceLookup(result.intlFormat || result.number)}
+                      style={{ background: 'none', border: 'none', padding: 0, color: 'var(--accent)', cursor: 'pointer', fontSize: 11, fontWeight: 600 }}
+                    >
+                      Force Update
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
-            <button className="btn btn-ghost" style={{ padding: '6px 12px', fontSize: 12 }} onClick={copyReport}>
-              {copied ? '✓ Copied' : 'Copy'}
-            </button>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn btn-ghost" style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => setResult(null)}>
+                Close
+              </button>
+              <button className="btn btn-ghost" style={{ padding: '6px 12px', fontSize: 12 }} onClick={copyReport}>
+                {copied ? '✓ Copied' : 'Copy'}
+              </button>
+            </div>
           </div>
 
           {/* Data rows */}
@@ -348,7 +546,7 @@ ABSTRACT_API_KEY=your_key`}
             </div>
           </div>
 
-          {/* Raw */}
+          {/* Raw JSON */}
           <div style={{ borderTop: '1px solid var(--line)' }}>
             <details>
               <summary style={{ padding: '10px 16px', fontSize: 11, color: 'var(--t3)', cursor: 'pointer', userSelect: 'none' }}>Raw JSON</summary>
@@ -360,15 +558,90 @@ ABSTRACT_API_KEY=your_key`}
         </div>
       )}
 
-      {/* Tips */}
-      {!result && !error && (
-        <div className="card" style={{ padding: 16 }}>
+      {/* History Checklist Panel */}
+      {history.length > 0 && (
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--t3)' }}>
+              Recent OSINT Lookups ({history.length})
+            </span>
+            <button 
+              onClick={clearAllHistory}
+              style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 11, fontWeight: 600 }}
+            >
+              Clear All
+            </button>
+          </div>
+          
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {history.map((item, idx) => {
+              const isActive = result && (
+                normalizeNumber(result.number) === normalizeNumber(item.number) ||
+                normalizeNumber(result.intlFormat) === normalizeNumber(item.intlFormat)
+              );
+
+              return (
+                <div 
+                  key={idx} 
+                  onClick={() => {
+                    setPhone(item.intlFormat || item.number);
+                    setResult({ ...item, isCached: true });
+                    setError('');
+                  }}
+                  className="card glow-card"
+                  style={{
+                    padding: '10px 14px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    cursor: 'pointer',
+                    background: isActive ? 'var(--accent-soft)' : 'rgba(20, 20, 22, 0.4)',
+                    borderColor: isActive ? 'var(--accent)' : 'rgba(255, 255, 255, 0.02)',
+                    borderWidth: 1,
+                    borderStyle: 'solid',
+                    boxShadow: isActive ? '0 0 10px rgba(99, 102, 241, 0.15)' : 'none',
+                    transition: 'all .2s ease'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <span style={{ fontSize: 18 }}>{item.flag}</span>
+                    <span className="mono" style={{ fontSize: 13, fontWeight: 600, color: 'var(--t1)' }}>
+                      {item.intlFormat || item.number}
+                    </span>
+                    <span style={{ fontSize: 11, color: 'var(--t3)' }}>
+                      {item.carrier && item.carrier !== 'Unknown Carrier' ? item.carrier : item.country}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={{
+                      padding: '2.5px 6px', borderRadius: 4, fontSize: 9, fontWeight: 700,
+                      background: item.valid ? 'var(--green-soft)' : 'rgba(239,68,68,.1)',
+                      color: item.valid ? 'var(--green)' : 'var(--red)'
+                    }}>
+                      {item.valid ? 'VALID' : 'INVALID'}
+                    </span>
+                    <button 
+                      onClick={(e) => deleteHistoryItem(e, item)}
+                      style={{ background: 'none', border: 'none', color: 'var(--t3)', cursor: 'pointer', fontSize: 14, padding: '0 4px', lineHeight: 1 }}
+                    >
+                      ×
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Info Tips Panel */}
+      {!result && (
+        <div className="card" style={{ padding: 16, background: 'rgba(20, 20, 22, 0.4)', borderColor: 'rgba(255, 255, 255, 0.02)' }}>
           <div style={{ fontSize: 12, color: 'var(--t3)', lineHeight: 1.8 }}>
             <div style={{ fontWeight: 600, color: 'var(--t2)', marginBottom: 6 }}>Tips</div>
-            <div>Always include country code: <span className="mono" style={{ color: 'var(--accent)', fontSize: 11 }}>+44 7700 900123</span></div>
-            <div>Works on mobile, landline, and VoIP numbers</div>
-            <div>Risk score is derived from carrier signals and line type</div>
-            <div style={{ marginTop: 8, color: 'var(--t3)' }}>Free keys at numverify.com · abstractapi.com</div>
+            <div>Always include country dial prefixes: <span className="mono" style={{ color: 'var(--accent)', fontSize: 11 }}>+44 7700 900123</span></div>
+            <div>Results are automatically cached locally to prevent API usage depletion.</div>
+            <div>Risk index evaluates VoIP channels, carrier signals, and format anomalies.</div>
           </div>
         </div>
       )}

@@ -146,10 +146,50 @@ export default function Home() {
               <path d="M5 12h14M12 5l7 7-7 7"/>
             </svg>
           </a>
-          <div style={{ display: 'flex', gap: 24, fontSize: 11, color: 'var(--t3)', fontFamily: 'var(--mono)' }}>
-            <div>SOCKETS: ONLINE</div>
-            <div>STUN/TURN: ACTIVE</div>
-            <div>VER: 2.1.0-PRO</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 24, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: 20, fontSize: 11, color: 'var(--t3)', fontFamily: 'var(--mono)' }}>
+              <div>SOCKETS: ONLINE</div>
+              <div>STUN/TURN: ACTIVE</div>
+              <div>VER: 2.1.0-PRO</div>
+              <div style={{ color: 'var(--accent)', fontWeight: 600 }}>BUILT BY MIKE</div>
+            </div>
+            
+            {/* Github Star Button */}
+            <a 
+              href="https://github.com/ChidiebereMichael18/MK-Tracker"
+              target="_blank" 
+              rel="noopener noreferrer"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                fontSize: 11,
+                color: 'var(--t2)',
+                textDecoration: 'none',
+                background: 'rgba(255, 255, 255, 0.02)',
+                border: '1px solid var(--line)',
+                borderRadius: 7,
+                padding: '5px 12px',
+                transition: 'all 0.2s ease',
+                fontFamily: 'var(--mono)',
+                cursor: 'pointer'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.borderColor = 'rgba(250, 204, 21, 0.4)';
+                e.currentTarget.style.background = 'rgba(250, 204, 21, 0.06)';
+                e.currentTarget.style.color = '#facc15';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.borderColor = 'var(--line)';
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.02)';
+                e.currentTarget.style.color = 'var(--t2)';
+              }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+              </svg>
+              <span>Star Repository</span>
+            </a>
           </div>
         </div>
 
